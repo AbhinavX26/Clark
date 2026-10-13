@@ -84,10 +84,10 @@ You may not need this fix unless you encounter the same error.
 Run the main Python file from your project directory. For example:
 
 ```powershell
-python Clark.py
+py -3.13 Clark.py
 ```
 
-Replace the filename with the actual name of the Python file in your repository.
+Replace the filename with the actual name of the Python file in your repository. Also, make sure to use only Python 3.13 as Clark only supports that specific version of Python at the moment. Future upgrades will also be aimed at resolving this predicament.
 
 The first launch may download the speech-recognition model. Allow it to finish before testing voice commands.
 
