@@ -84,7 +84,7 @@ You may not need this fix unless you encounter the same error.
 Run the main Python file from your project directory. For example:
 
 ```powershell
-python Clark_Conversation_Mode.py
+python Clark.py
 ```
 
 Replace the filename with the actual name of the Python file in your repository.
