@@ -328,19 +328,29 @@ def finish_listening():
 
 
 def listen_loop():
+    """Listen for the wake phrase, then accept follow-up commands in a session."""
     microphone = get_microphone()
     if microphone is None:
         root.after(0, finish_listening)
         return
 
+    active_session = False
     try:
         with microphone as source:
             ui_status('Listening for "Hey Clark"...')
 
             while not stop_event.is_set():
+                # Once awakened, the user can keep giving commands. Eight seconds
+                # without starting another utterance ends the active session.
+                listen_timeout = 8 if active_session else 3
                 try:
-                    audio = recognizer.listen(source, timeout=3, phrase_time_limit=8)
+                    audio = recognizer.listen(
+                        source, timeout=listen_timeout, phrase_time_limit=8
+                    )
                 except sr.WaitTimeoutError:
+                    if active_session:
+                        active_session = False
+                        ui_status('Session ended. Listening for "Hey Clark"...')
                     continue
 
                 if stop_event.is_set():
@@ -357,50 +367,34 @@ def listen_loop():
                     ui_status(f"Whisper error: {error}")
                     continue
 
-                detected, command = find_wake_phrase(spoken)
-                if not detected:
-                    continue
+                detected, command_after_wake = find_wake_phrase(spoken)
 
-                # If the wake phrase and command were said in one sentence.
-                if command:
-                    ui_status(f'Heard after wake phrase: "{command}"')
-                    launch_application(command)
-                    if not stop_event.is_set():
-                        root.after(
-                            1800,
-                            lambda: ui_status('Listening for "Hey Clark"...')
-                            if not stop_event.is_set() else None,
+                if active_session:
+                    # During an active session, commands do not need the wake phrase.
+                    command_text = command_after_wake if detected else spoken
+                    if detected and not command_text:
+                        ui_status("I'm listening. What would you like me to do?")
+                        continue
+                else:
+                    if not detected:
+                        continue
+                    active_session = True
+                    if not command_after_wake:
+                        ui_status(
+                            "Clark is active. Say commands naturally; "
+                            "pause for 8 seconds to return to wake mode."
                         )
-                    continue
+                        continue
+                    command_text = command_after_wake
 
-                ui_status("Wake phrase detected! Now say your command.")
-
-                try:
-                    command_audio = recognizer.listen(
-                        source, timeout=10, phrase_time_limit=8
-                    )
-                    if stop_event.is_set():
-                        break
-
-                    command_text = transcribe_audio(command_audio)
-                    ui_status(f'Heard command: "{command_text}"')
-                    launch_application(command_text)
-
-                except sr.WaitTimeoutError:
-                    ui_status("No command heard. Listening again...")
-                except sr.UnknownValueError:
-                    ui_status("I heard speech but couldn't understand it. Try saying 'open Calculator'.")
-                except sr.RequestError:
-                    ui_status("Whisper could not transcribe that audio. Try again.")
-                except Exception as error:
-                    ui_status(f"Whisper error: {error}")
-
+                ui_status(f'Heard command: "{command_text}"')
+                launch_application(command_text)
                 if not stop_event.is_set():
-                    # Keep the command result visible briefly, then resume wake-word listening.
                     root.after(
                         1800,
-                        lambda: ui_status('Listening for "Hey Clark"...')
-                        if not stop_event.is_set() else None,
+                        lambda: ui_status(
+                            "Clark is active. Say another command, or pause to finish."
+                        ) if not stop_event.is_set() and active_session else None,
                     )
 
     except (OSError, AttributeError) as error:
@@ -410,7 +404,6 @@ def listen_loop():
             root.after(0, finish_listening)
         except (tk.TclError, RuntimeError):
             pass
-
 
 def close_app():
     global closing
@@ -426,9 +419,10 @@ def close_app():
 
 root = tk.Tk()
 root.title(APP_NAME)
-root.geometry("390x330")
-root.resizable(False, False)
-root.attributes("-topmost", True)
+root.geometry("440x360")
+root.minsize(390, 330)
+root.resizable(True, True)
+# Do not force Clark above other windows; it behaves like a normal desktop app.
 root.configure(bg="#171923")
 root.protocol("WM_DELETE_WINDOW", close_app)
 
@@ -439,10 +433,19 @@ title_label = tk.Label(
 title_label.pack(pady=(12, 3))
 
 status_label = tk.Label(
-    root, text="Local Whisper recognition. First, test your microphone.", font=("Segoe UI", 9),
+    root, text="Local Whisper. Test your microphone, then start Clark. Say the wake phrase once; follow-up commands do not need it.", font=("Segoe UI", 9),
     fg="#c3cbe0", bg="#171923", wraplength=350, justify="center",
 )
-status_label.pack(pady=8)
+status_label.pack(pady=8, padx=16, fill="x")
+
+
+def update_status_wrap(event):
+    # Keep status text readable when the user resizes Clark.
+    if event.widget is root:
+        status_label.config(wraplength=max(260, event.width - 48))
+
+
+root.bind("<Configure>", update_status_wrap)
 
 test_button = tk.Button(
     root, text="1. Test Microphone", command=test_microphone,
