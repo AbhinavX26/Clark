@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import messagebox
 from difflib import SequenceMatcher
 
+from plyer import audio
 import speech_recognition as sr
 from faster_whisper import WhisperModel
 
@@ -356,17 +357,34 @@ def listen_loop():
                 if stop_event.is_set():
                     break
 
+                ui_status("Processing speech...")
+
                 try:
                     spoken = transcribe_audio(audio)
+                    ui_status(f'I heard: "{spoken}"')
+
                 except sr.UnknownValueError:
+                    if active_session:
+                        ui_status("I couldn't understand that command. Please try again.")
                     continue
+
                 except sr.RequestError:
                     ui_status("Whisper could not transcribe that audio. Try speaking clearly.")
                     continue
+
                 except Exception as error:
-                    ui_status(f"Whisper error: {error}")
+                    ui_status(f"Whisper error: {os.error}")
                     continue
 
+                if normalize(spoken) in {
+                    "stop listening",
+                    "stop listening now",
+                    "stop listening clark",
+                }:
+                    ui_status("Stop command received. Clark is stopping...")
+                    stop_event.set()
+                    break
+                
                 detected, command_after_wake = find_wake_phrase(spoken)
 
                 if active_session:
